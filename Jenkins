@@ -30,26 +30,50 @@ pipeline {
 
         stage('Push Image to DockerHub') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerHub',
-                    usernameVariable: 'dockerHubUser',
-                    passwordVariable: 'dockerHubPass'
-                )]) {
-                    sh 'docker tag ci-pipeline ${dockerHubUser}/ci-pipeline:latest'
-                    sh 'echo ${dockerHubPass} | docker login -u ${dockerHubUser} --password-stdin'
-                    sh 'docker push ${dockerHubUser}/ci-pipeline:latest'
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerHub',
+                        usernameVariable: 'dockerHubUser',
+                        passwordVariable: 'dockerHubPass'
+                    )
+                ]) {
+                    sh '''
+                        set -e
+                        echo "$dockerHubPass" | docker login \
+                            -u "$dockerHubUser" --password-stdin
+                        docker tag ci-pipeline "$dockerHubUser/ci-pipeline:latest"
+                        docker push "$dockerHubUser/ci-pipeline:latest"
+                    '''
                 }
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
-                withKubeConfig(credentialsId: 'kubernetes') {
-                    sh 'kubectl apply -f deployment.yaml'
-                    sh 'kubectl apply -f service.yaml'
-                    sh 'kubectl rollout restart deployment/ci-pipeline || true'
+                withKubeConfig(credentialsId: 'Kubernetes') {
+                    sh '''
+                        set -e
+                        kubectl apply -f deployment.yaml
+                        kubectl apply -f service.yaml
+                        kubectl rollout status deployment/mydeploy --timeout=120s
+                        kubectl get deployments
+                        kubectl get pods
+                        kubectl get services
+                    '''
                 }
             }
+        }
+    }
+
+    post {
+        always {
+            sh 'docker logout || true'
+        }
+        success {
+            echo 'Pipeline completed successfully.'
+        }
+        failure {
+            echo 'Pipeline failed. Check the stage logs above.'
         }
     }
 }
