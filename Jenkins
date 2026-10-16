@@ -1,1 +1,55 @@
+pipeline {
+    agent any
 
+    stages {
+
+        stage('Code Checkout') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/phanindra61/CICD-main-new.git'
+            }
+        }
+
+        stage('Maven Build & Unit Test') {
+            steps {
+                sh 'mvn clean install'
+            }
+        }
+
+        stage('Maven Integration Test') {
+            steps {
+                sh 'mvn verify'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh 'docker build -t ci-pipeline .'
+            }
+        }
+
+        stage('Push Image to DockerHub') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerHub',
+                    usernameVariable: 'dockerHubUser',
+                    passwordVariable: 'dockerHubPass'
+                )]) {
+                    sh 'docker tag ci-pipeline ${dockerHubUser}/ci-pipeline:latest'
+                    sh 'echo ${dockerHubPass} | docker login -u ${dockerHubUser} --password-stdin'
+                    sh 'docker push ${dockerHubUser}/ci-pipeline:latest'
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                withKubeConfig(credentialsId: 'kubernetes') {
+                    sh 'kubectl apply -f deployment.yaml'
+                    sh 'kubectl apply -f service.yaml'
+                    sh 'kubectl rollout restart deployment/ci-pipeline || true'
+                }
+            }
+        }
+    }
+}
